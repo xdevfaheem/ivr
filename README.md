@@ -3,7 +3,7 @@
 ## Architecture
 
 ```
-Phone Call <-> Twilio <-> Media Streams (WebSocket) <-> Pipecat <-> AI Services (VAD -> STT -> LLM + TTS)
+Phone Call <-> Twilio <-> Media Streams (WebSocket) <-> Pipecat <-> AI Services (VAD -> STT -> LLM -> TTS)
 ```
 
 **Components:**
