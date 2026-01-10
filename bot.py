@@ -5,12 +5,18 @@ from loguru import logger
 from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
-from pipecat.frames.frames import TTSSpeakFrame
+from pipecat.frames.frames import (
+    Frame,
+    TranscriptionFrame,
+    TTSSpeakFrame,
+    TTSUpdateSettingsFrame,
+)
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.runner.types import RunnerArguments
 from pipecat.runner.utils import parse_telephony_websocket
 from pipecat.serializers.twilio import TwilioFrameSerializer
@@ -22,11 +28,53 @@ from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams, FastAPI
 
 load_dotenv(override=True)
 
-
-# TODO: add interruptions
+# TODO: add interruptions, waiting for v.0.0.99 to be released, which includes standardized way to implement turn taking (https://github.com/pipecat-ai/pipecat/pull/3045#issuecomment-3712696317)
 # https://github.com/pipecat-ai/pipecat/pull/3325
 # https://github.com/pipecat-ai/pipecat/pull/3045
 # https://github.com/pipecat-ai/pipecat/blob/main/examples/foundational/07z-interruptible-sarvam.py
+
+
+# yeah naming sucks
+class LanguageDetectorandSwitcher(FrameProcessor):
+    """Parse detected language from STT result and updates TTS config to that language."""
+
+    def __init__(
+        self,
+    ):
+        super().__init__()
+        self.lang_changed = False
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+
+        if isinstance(frame, TranscriptionFrame):
+            detected_language = frame.language
+            # only change the language once
+            if not self.lang_changed and detected_language != "en-IN":
+                try:
+                    # update tts target lang
+                    # https://github.com/pipecat-ai/pipecat/issues/2989#issuecomment-3718916895
+                    # had to pass different voice in-order to trigger the config change to tts connection, otherwise it won't, it must a bug ig
+                    # https://github.com/pipecat-ai/pipecat/blob/10aa78480926fc6ef868e360b3b7e6891a7b256c/src/pipecat/services/sarvam/tts.py#L527
+                    await self.push_frame(
+                        TTSUpdateSettingsFrame(
+                            settings={
+                                "target_language_code": detected_language,
+                                "voice_id": "manisha",
+                            }
+                        ),
+                        FrameDirection.DOWNSTREAM,
+                    )
+
+                    self.lang_changed = True
+                    logger.info(f"Language changed to {detected_language} for this call")
+
+                except (ValueError, KeyError) as e:
+                    logger.warning(f"Could not convert language '{detected_language}': {e}")
+
+        await self.push_frame(frame, direction)
+
+
 async def run_bot(transport: BaseTransport):
     """Main bot logic."""
     logger.info("Starting bot")
@@ -48,8 +96,13 @@ async def run_bot(transport: BaseTransport):
         api_key=os.getenv("SARVAM_API_KEY"),
         model=os.getenv("SARVAM_TTS_MODEL"),
         voice_id=os.getenv("SARVAM_TTS_VOICE_ID"),
+        aggregate_sentences=False,
         params=SarvamTTSService.InputParams(
-            language="ta-IN", pitch=0.50, pace=1.0, loudness=1.0, enable_preprocessing=True
+            language=None,  # en is the default, will be changed once user speaks
+            pitch=0.30,  # slightly sharper. 0.0 - neutral, deeper<0.0>sharper
+            pace=0.9,  # speed of speech
+            loudness=1.2,  # volume level
+            enable_preprocessing=True,  # improves pronunciation of numbers, dates, abbr, etc.. and mixed-language text.
         ),
     )
 
@@ -58,7 +111,7 @@ async def run_bot(transport: BaseTransport):
     llm = GoogleLLMService(model=os.getenv("LLM_ID"), api_key=os.getenv("LLM_API_KEY"))
 
     system_prompt = """\
-You are a helpful AI assistant in an audio call. Respond naturally and keep your answers conversational. Your ouput will be converted into audio, so don't include special characters in your answers that can't easily be spoken, such as emojis or bullet points, etc.
+You are a helpful AI assistant in an audio call. Have a natural conversation with the user in the language they are speaking in, though you can mix-in words or phrase from any other languages where needed. And also, your output will be converted into audio, so don't include special characters in your answers that can't easily be spoken, such as emojii, asterisk, bullet points, etc.
 """
 
     context = LLMContext([{"role": "system", "content": system_prompt}])
@@ -68,6 +121,7 @@ You are a helpful AI assistant in an audio call. Respond naturally and keep your
     pipeline = Pipeline([
         transport.input(),
         stt,
+        LanguageDetectorandSwitcher(),
         context_aggregator.user(),
         llm,
         tts,
