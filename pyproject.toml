@@ -1,0 +1,11 @@
+[project]
+name = "hospital-voice-ai"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "pipecat-ai-flows>=0.0.22",
+    "pipecat-ai-tail>=0.0.2",
+    "pipecat-ai[google,local-smart-turn-v3,runner,sarvam,silero,websocket]>=0.0.100",
+    "pycountry>=24.6.1",
+]
