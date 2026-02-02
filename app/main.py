@@ -1,5 +1,5 @@
 import os
-
+import log
 from dotenv import load_dotenv
 from flow import create_initial_node
 from loguru import logger
@@ -7,6 +7,7 @@ from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
 from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
+from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -34,6 +35,8 @@ from pipecat_tail.observer import TailObserver
 from utils import LanguageDetectorandSwitcher
 
 load_dotenv(override=True)
+log.setup()
+
 
 async def bot(runner_args: RunnerArguments):
     """Main bot logic."""
@@ -68,6 +71,9 @@ async def bot(runner_args: RunnerArguments):
         # params=SarvamSTTService.InputParams(vad_signal=True, high_vad_sensitivity=True),
     )
 
+    # language detect and switch on start
+    language_switcher = LanguageDetectorandSwitcher(stt)
+
     # Text-to-Speech service
     # https://reference-server.pipecat.ai/en/latest/_modules/pipecat/services/sarvam/tts.html
     tts = SarvamTTSService(
@@ -77,11 +83,11 @@ async def bot(runner_args: RunnerArguments):
         aggregate_sentences=True,
         params=SarvamTTSService.InputParams(
             language=None,  # en is the default, will be changed once user speaks
-            pitch=0.20,  # slightly sharper. 0.0 - neutral, deeper<0.0>sharper
-            pace=0.85,  # speed of speech
-            loudness=1.1,  # volume level
+            pitch=0.30,  # slightly sharper. 0.0 - neutral, deeper<0.0>sharper
+            pace=0.90,  # speed of speech
+            loudness=1.2,  # volume level
             enable_preprocessing=True,  # improves pronunciation of numbers, dates, abbr, etc.. and mixed-language text.
-            output_audio_bitrate="64k",  # lower bitrate for audio stream, good for speech
+            output_audio_bitrate="128k",  # lower bitrate for audio stream, good for speech
         ),
     )
 
@@ -111,8 +117,8 @@ async def bot(runner_args: RunnerArguments):
         [
             transport.input(),
             stt,
+            language_switcher,
             context_aggregator.user(),
-            LanguageDetectorandSwitcher(),
             llm,
             tts,
             transport.output(),
@@ -144,6 +150,7 @@ async def bot(runner_args: RunnerArguments):
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
         logger.info("Client connected")
+        await task.queue_frame(TTSSpeakFrame("Hey there! How can I assist you today?"))
         await flow_manager.initialize(create_initial_node())
 
     @transport.event_handler("on_client_disconnected")
