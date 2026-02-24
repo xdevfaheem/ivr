@@ -12,13 +12,13 @@ When someone calls your Plivo number:
 ## Setup
 
 1. Set up a virtual environment and install dependencies:
-
+   Once inside the directory,
+   
    ```sh
-   cd inbound
    uv sync
    ```
 
-2. Create an .env file and add API keys:
+3. Create an .env file and add API keys:
 
    ```sh
    cp env.example .env
