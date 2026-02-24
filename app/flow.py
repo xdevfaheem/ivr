@@ -1,5 +1,6 @@
-from db import appointments_db, department_index, doctor_availability_db, doctors_db
 from pipecat_flows import FlowArgs, FlowManager, FlowsFunctionSchema, NodeConfig
+
+from app.db import appointments_db, department_index, doctor_availability_db, doctors_db
 
 
 # indent handler
@@ -58,9 +59,7 @@ async def get_doctors_availability(args: FlowArgs, flow_manager: FlowManager):
             date_with_time = []
             for d, times in slots.items():
                 times = times or []
-                date_with_time.append(
-                    f"Date: {d}\nTime: {', '.join(times) or 'No slots'}"
-                )
+                date_with_time.append(f"Date: {d}\nTime: {', '.join(times) or 'No slots'}")
             response.append(
                 "ID: {}\nName: {}\nAvailability:\n\n{}".format(
                     doc_id, doc["name"], "\n".join(date_with_time)
@@ -100,7 +99,8 @@ async def check_appointment_status(args: FlowArgs):
     appt_id = args["appointment_id"]
     if appt_id in appointments_db:
         appt = appointments_db[appt_id]
-        return f"Patient: {appt['patient']}, Doctor ID: {appt['doctor_id']}, Date: {appt['date']}, Time: {appt['time']}, Status: {appt['status']}"
+        doctor_info = doctors_db[appt_id["doctor_id"]]
+        return f"Patient: {appt['patient']}, Doctor ID: {appt['doctor_id']}, Doctor's Name: {doctor_info['name']}, Department: {doctor_info['department']}, Date: {appt['date']}, Time: {appt['time']}, Status: {appt['status']}"
 
     return "Appointment not found."
 
@@ -117,7 +117,7 @@ def create_initial_node() -> NodeConfig:
 - Reschedule existing appointments 
 - Check appointment status 
 
-Be professional but friendly. Have a natural and conversational with the user in the same language they are speaking in. You can use english or other language words strictly when necessary for clarity and correctness.
+Be professional but friendly. Have a natural and conversational with the user in the **same** indic language they are speaking in. You can use english words when saying english words, as-in code-mixing for clarity and correctness.
 
 Your responses will be converted to speech. Write output that is easy to speak and easy to listen to.
 Do not use emojis, markdown, bullet points, asterisks, or any non-verbal symbols.
@@ -302,7 +302,7 @@ def create_appointment_status_node() -> NodeConfig:
 
     appointment_status_func_schema = FlowsFunctionSchema(
         name="check_appointment_status",
-        description="Check the appointment's status",
+        description="Get all the information about the appointment",
         properties={"appointment_id": {"type": "string"}},
         required=["appointment_id"],
         handler=handle_appointment_status,
@@ -326,7 +326,7 @@ def create_main_menu_node() -> NodeConfig:
         "task_messages": [
             {
                 "role": "system",
-                "content": "Ask the user what'd they like to do next or like, is there anything to help with, then just choose the appropriate action, strictly with no follow up.",
+                "content": "Ask the user what'd they like to do next or like, is there anything to help with, then just choose the appropriate action, strictly with no follow up, nothing. just action.",
             }
         ],
         "functions": [handle_indent_func_schema],

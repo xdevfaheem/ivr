@@ -41,7 +41,9 @@ class LanguageDetectorandSwitcher(FrameProcessor):
                         TTSUpdateSettingsFrame(
                             settings={
                                 "target_language_code": detected_language,
-                                "voice_id": "manisha",
+                                "voice_id": "simran",
+                                "pace": 1.2
+
                             }
                         ),
                     )
